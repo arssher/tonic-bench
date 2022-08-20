@@ -10,7 +10,7 @@ use clap::Parser;
 use neon_broker::neon_broker_client::NeonBrokerClient;
 use neon_broker::{SafekeeperTimelineInfo, SubscribeSafekeeperInfoRequest};
 use tokio::time::{self, sleep};
-use tonic::transport::Channel;
+
 use tonic::Request;
 
 #[derive(Parser, Debug)]
@@ -52,7 +52,10 @@ async fn progress_reporter(counter: Arc<AtomicU64>) {
     }
 }
 
-async fn subscribe(mut client: NeonBrokerClient<Channel>, counter: Arc<AtomicU64>, _i: u32) {
+async fn subscribe(counter: Arc<AtomicU64>, _i: u32) {
+    let mut client = NeonBrokerClient::connect("http://[::1]:50051")
+        .await
+        .unwrap();
     let request = SubscribeSafekeeperInfoRequest {};
     let mut stream = client
         .subscribe_safekeeper_info(request)
@@ -66,7 +69,10 @@ async fn subscribe(mut client: NeonBrokerClient<Channel>, counter: Arc<AtomicU64
     }
 }
 
-async fn publish(mut client: NeonBrokerClient<Channel>) {
+async fn publish() {
+    let mut client = NeonBrokerClient::connect("http://[::1]:50051")
+        .await
+        .unwrap();
     let mut counter: u64 = 0;
 
     // create stream producing new values
@@ -99,15 +105,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let counter = Arc::new(AtomicU64::new(0));
     let h = tokio::spawn(progress_reporter(counter.clone()));
 
-    let client = NeonBrokerClient::connect("http://[::1]:50051").await?;
-
     for i in 0..args.num_subs {
-        tokio::spawn(subscribe(client.clone(), counter.clone(), i));
+        tokio::spawn(subscribe(counter.clone(), i));
     }
     // let subscribers get registred
     sleep(Duration::from_millis(1000)).await;
     for _ in 0..args.num_pubs {
-        tokio::spawn(publish(client.clone()));
+        tokio::spawn(publish());
     }
 
     h.await?;
